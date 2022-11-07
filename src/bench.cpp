@@ -5,7 +5,7 @@
 constexpr int niteration = 30;
 int width;
 int height;
-const auto image = read_png("windows-logo-digital-art-8k-pv.png", &width, &height);
+const auto image = read_png("imgs/windows-logo-digital-art-8k-pv.png", &width, &height);
 
 void BM_Rendering_cpu(benchmark::State& st)
 {
@@ -16,16 +16,7 @@ void BM_Rendering_cpu(benchmark::State& st)
     st.counters["frame_rate"] = benchmark::Counter(st.iterations(), benchmark::Counter::kIsRate);
 }
 
-void BM_Rendering_gpu1(benchmark::State& st)
-{
-    int ncorners = 0;
-    for (auto _ : st)
-        gpu::find_corners_gpu_1st_implem(image, width, height, &ncorners);
-
-    st.counters["frame_rate"] = benchmark::Counter(st.iterations(), benchmark::Counter::kIsRate);
-}
-
-void BM_Rendering_gpu2(benchmark::State& st)
+void BM_Rendering_gpu(benchmark::State& st)
 {
     int ncorners = 0;
     for (auto _ : st)
@@ -39,12 +30,7 @@ BENCHMARK(BM_Rendering_cpu)
 ->UseRealTime()
 ->Iterations(3);
 
-BENCHMARK(BM_Rendering_gpu1)
-->Unit(benchmark::kMillisecond)
-->UseRealTime()
-->Iterations(niteration);
-
-BENCHMARK(BM_Rendering_gpu2)
+BENCHMARK(BM_Rendering_gpu)
 ->Unit(benchmark::kMillisecond)
 ->UseRealTime()
 ->Iterations(niteration);

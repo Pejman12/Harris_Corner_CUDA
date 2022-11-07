@@ -14,7 +14,6 @@ void write_points(const char* filename, point *corners, int nb)
     file.close();
 }
 
-// Usage: ./mandel
 int main(int argc, char** argv)
 {
     (void) argc;
@@ -27,10 +26,9 @@ int main(int argc, char** argv)
     CLI::App app{"mandel"};
     app.add_option("-i", input_file, "Input image");
     app.add_option("-o", output_file, "Output file with corner coordinates");
-    app.add_set("-m", mode, {"GPU1", "GPU2", "CPU"}, "Either 'GPU' or 'CPU'");
+    app.add_set("-m", mode, {"GPU", "CPU"}, "Either 'GPU' or 'CPU'");
 
     CLI11_PARSE(app, argc, argv);
-
 
     int width, height;
     auto image = read_png(input_file.c_str(), &width, &height);
@@ -45,16 +43,7 @@ int main(int argc, char** argv)
         free(corners);
     }
 
-    else if (mode == "GPU1")
-    {
-        int nb_kpts = 0;
-        auto corners = gpu::find_corners_gpu_1st_implem(image, width, height, &nb_kpts);
-        std::cout << "Found " << nb_kpts << " corners" << std::endl;
-        write_points(output_file.c_str(), corners, nb_kpts);
-        free(corners);
-    }
-
-    else if (mode == "GPU2")
+    else if (mode == "GPU")
     {
         int nb_kpts = 0;
         auto corners = gpu::find_corners_gpu(image, width, height, &nb_kpts);
