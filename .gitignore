@@ -1,0 +1,11 @@
+.idea
+*.i
+*.ii
+*.gpu
+*.ptx
+*.cubin
+*.fatbin
+cmake-build*
+build
+venv
+*.png
