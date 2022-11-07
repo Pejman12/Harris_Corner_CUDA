@@ -2,6 +2,8 @@
 #include <spdlog/spdlog.h>
 #include <thrust/extrema.h>
 #include <thrust/device_vector.h>
+#include <thrust/sort.h>
+#include <thrust/remove.h>
 
 namespace gpu
 {
@@ -215,24 +217,53 @@ namespace gpu
         mask_line[x] = (harris_line[x] > threshold) & (dilate_line[x] == harris_line[x]);
     }
 
-    static point *insert_kpts(point *kpts, int *nb_kpts, const double *harris_resp, const int width,
-                              const int i)
+    __global__ void apply_mask_harris(double *harris, size_t harrisPitch, bool *mask, size_t maskPitch,
+                                      const int width, const int height)
     {
-        if (*nb_kpts < MAX_KPTS)
-            kpts = (point *)realloc(kpts, ++(*nb_kpts) * sizeof(point));
-        const auto test = harris_resp[i];
-        int idx = 0;
-        while (idx < *nb_kpts - 1 && harris_resp[kpts[idx].y * width + kpts[idx].x] >= test)
-            ++idx;
-        for (auto k = *nb_kpts - 1; k > idx; --k)
-        {
-            kpts[k].x = kpts[k - 1].x;
-            kpts[k].y = kpts[k - 1].y;
-        }
-        kpts[idx].x = i % width;
-        kpts[idx].y = i / width;
-        return kpts;
+        const auto x = blockDim.x * blockIdx.x + threadIdx.x;
+        const auto y = blockDim.y * blockIdx.y + threadIdx.y;
+
+        if (x >= width || y >= height)
+            return;
+
+        auto *harris_line = (double *)((char *)harris + y * harrisPitch);
+        const auto *mask_line = (bool *)((char *)mask + y * maskPitch);
+        harris_line[x] = mask_line[x] ? harris_line[x] : 0;
     }
+
+    __global__ void harris_to_kpts(double *harris, size_t harrisPitch, point *kpts, size_t kptsPitch,
+                                   const int width, const int height)
+    {
+        const int x = blockDim.x * blockIdx.x + threadIdx.x;
+        const int y = blockDim.y * blockIdx.y + threadIdx.y;
+
+        if (x >= width || y >= height)
+            return;
+
+        const auto *harris_line = (double *)((char *)harris + y * harrisPitch);
+        auto *kpts_line = (point *)((char *)kpts + y * kptsPitch);
+        kpts_line[x].x = x;
+        kpts_line[x].y = y;
+        kpts_line[x].score = harris_line[x];
+    }
+
+    struct remove_null_kpts
+    {
+        __host__ __device__
+            bool operator()(const point &kpt) const
+        {
+            return kpt.score == 0;
+        }
+    };
+
+    struct sort_kpts
+    {
+        __host__ __device__
+            bool operator()(const point &a, const point &b) const
+        {
+            return a.score < b.score;
+        }
+    };
 
     static double *to_matrix(unsigned char **buffer, const int width, const int height)
     {
@@ -436,32 +467,38 @@ namespace gpu
         cudaDeviceSynchronize();
         cudaFree(devHarrisDilate);
 
-        auto harris_resp = (double *)malloc(width * height * sizeof(double));
-        if (cudaMemcpy2D(harris_resp, width * sizeof(double), devHarris, HarrisPitch,
-                         width * sizeof(double), height, cudaMemcpyDeviceToHost)
-            != cudaSuccess)
-            abortError("Fail Harris copy");
-        cudaFree(devHarris);
-
-        auto harris_mask = (bool *)malloc(width * height * sizeof(bool));
-        if (cudaMemcpy2D(harris_mask, width * sizeof(bool), devHarrisMask, HarrisMaskPitch,
-                         width * sizeof(bool), height, cudaMemcpyDeviceToHost)
-            != cudaSuccess)
-            abortError("Fail HarrisMask copy");
+        apply_mask_harris<<<dimGrid, dimBlock>>>(devHarris, HarrisPitch, devHarrisMask, HarrisMaskPitch, width, height);
+        cudaDeviceSynchronize();
         cudaFree(devHarrisMask);
 
-        *nb_kpts = 0;
-        point *kpts = nullptr;
-#pragma omp parallel for schedule(dynamic) shared(harris_mask, harris_resp, height, width, nb_kpts, kpts, max_kpts) default(none)
-        for (auto i = 0; i < height * width; ++i)
-        {
-            if (harris_mask[i])
-#pragma omp critical
-                kpts = insert_kpts(kpts, nb_kpts, harris_resp, width, i);
-        }
+        // Device Kpts
+        point *devKpts;
+        size_t KptsPitch;
+        if (cudaMallocPitch(&devKpts, &KptsPitch, width * sizeof(point), height) != cudaSuccess)
+            abortError("Fail Kpts allocation");
+        harris_to_kpts<<<dimGrid, dimBlock>>>(devHarris, HarrisPitch, devKpts, KptsPitch, width, height);
+        cudaDeviceSynchronize();
+        cudaFree(devHarris);
 
-        free(harris_resp);
-        free(harris_mask);
+        thrust::device_vector<point> kpts_vec(width * height);
+
+        if (cudaMemcpy2D(thrust::raw_pointer_cast(kpts_vec.data()), width * sizeof(point), devKpts, KptsPitch,
+                         width * sizeof(point), height, cudaMemcpyDeviceToDevice) != cudaSuccess)
+            abortError("Fail Kpts copy");
+        cudaFree(devKpts);
+
+        remove_null_kpts remove_struct;
+        sort_kpts sort_struct;
+
+        const auto new_last = thrust::remove_if(kpts_vec.begin(), kpts_vec.end(), remove_struct);
+
+        thrust::sort(kpts_vec.begin(), new_last, sort_struct);
+
+        *nb_kpts = new_last - kpts_vec.begin();
+        *nb_kpts = std::min(MAX_KPTS, *nb_kpts);
+        auto *kpts = (point *)malloc(*nb_kpts * sizeof(point));
+        if (cudaMemcpy(kpts, thrust::raw_pointer_cast(kpts_vec.data()), *nb_kpts * sizeof(point), cudaMemcpyDeviceToHost) != cudaSuccess)
+            abortError("Fail Kpts copy");
 
         return kpts;
     }

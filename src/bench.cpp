@@ -25,10 +25,10 @@ void BM_Rendering_gpu(benchmark::State& st)
     st.counters["frame_rate"] = benchmark::Counter(st.iterations(), benchmark::Counter::kIsRate);
 }
 
-BENCHMARK(BM_Rendering_cpu)
-->Unit(benchmark::kMillisecond)
-->UseRealTime()
-->Iterations(3);
+//BENCHMARK(BM_Rendering_cpu)
+//->Unit(benchmark::kMillisecond)
+//->UseRealTime()
+//->Iterations(3);
 
 BENCHMARK(BM_Rendering_gpu)
 ->Unit(benchmark::kMillisecond)

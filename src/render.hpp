@@ -13,6 +13,7 @@
 struct point {
     int x;
     int y;
+    double score;
 };
 
 #include "CPU/corners_cpu.hpp"

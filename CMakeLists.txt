@@ -1,5 +1,5 @@
-cmake_minimum_required (VERSION 3.14)
-project (GPGPU CUDA CXX)
+cmake_minimum_required (VERSION 3.22)
+project (HARRIS LANGUAGES CUDA CXX)
 
 include(FetchContent)
 
@@ -35,6 +35,8 @@ find_package(PNG REQUIRED)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -Wextra -pedantic -std=c++17 -O3 -fopenmp")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS}")
+set(CMAKE_CUDA_ARCHITECTURES 60 61 62 70 72 75 86)
+set(CMAKE_CUDA_COMPILER /usr/local/cuda-11.8/bin/nvcc)
 
 
 add_library(renderer_cpu)
@@ -51,7 +53,6 @@ target_link_libraries(renderer_gpu PRIVATE spdlog::spdlog)
 target_sources(renderer_gpu PRIVATE src/GPU/corners_gpu.cu)
 target_include_directories(renderer_gpu PRIVATE src src/GPU)
 set_target_properties(renderer_gpu PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-set_target_properties(renderer_gpu PROPERTIES CUDA_ARCHITECTURES all-major)
 
 add_executable(render)
 target_sources(render PRIVATE src/render.cpp src/read_png.cpp)

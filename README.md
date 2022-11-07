@@ -6,14 +6,14 @@
 mkdir build
 cd build
 cmake ..
-make -j <nb_cores> render
+make render -j <nb_cores>
 ./render [-i <input_image>] [-o <output_image>] [-m <mode 'GPU/CPU'>]
 ```
 
 ## Benchmark
 
 ```bash
-make -j <nb_cores> bench  # building could fail because of google benchmark library 
+make bench -j <nb_cores>  # building could fail because of google benchmark library 
                           # you may need to add a missing import in the built files
 ./bench
 ```
