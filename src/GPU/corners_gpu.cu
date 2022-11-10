@@ -1,5 +1,6 @@
 #include "corners_gpu.cuh"
-#include <spdlog/spdlog.h>
+#include "separable_convolution.cuh"
+#include "error.cuh"
 #include <thrust/extrema.h>
 #include <thrust/device_vector.h>
 #include <thrust/sort.h>
@@ -7,43 +8,6 @@
 
 namespace gpu
 {
-
-    [[gnu::noinline]] void _abortError(const char *msg, const char *fname, int line)
-    {
-        cudaError_t err = cudaGetLastError();
-        spdlog::error("{} ({}, line: {})", msg, fname, line);
-        spdlog::error("Error {}: {}", cudaGetErrorName(err), cudaGetErrorString(err));
-        std::exit(1);
-    }
-
-#define abortError(msg) _abortError(msg, __FUNCTION__, __LINE__)
-
-    __global__ void convolve(double *buffer, const int width, const int height, size_t bufferPitch,
-                             double *kernel, size_t kernelPitch, double *res, size_t resPitch)
-    {
-        const int x = blockDim.x * blockIdx.x + threadIdx.x;
-        const int y = blockDim.y * blockIdx.y + threadIdx.y;
-
-        if (x >= width || y >= height)
-            return;
-
-        auto *res_line = (double *)((char *)res + y * resPitch);
-        double sum = 0;
-        for (auto i = -KERNEL_SIZE; i <= KERNEL_SIZE; ++i)
-        {
-            if (y + i < 0 || y + i >= height)
-                continue;
-            const auto *buffer_line = (double *)((char *)buffer + (y + i) * bufferPitch);
-            const auto *kernel_line = (double *)((char *)kernel + (i + KERNEL_SIZE) * kernelPitch);
-            for (auto j = -KERNEL_SIZE; j <= KERNEL_SIZE; ++j)
-            {
-                if (x + j < 0 || x + j >= width)
-                    continue;
-                sum += buffer_line[x + j] * kernel_line[j + KERNEL_SIZE];
-            }
-        }
-        res_line[x] = sum;
-    }
 
     __global__ void matmult(double *a, size_t aPitch, double *b, size_t bPitch, const int width,
                             const int height, double *res, size_t resPitch)
@@ -77,33 +41,6 @@ namespace gpu
         double det = Wx2_line[x] * Wy2_line[x] - Wxy_line[x] * Wxy_line[x];
         double trace = Wx2_line[x] + Wy2_line[x];
         res_line[x] = det / (trace + EPS);
-    }
-
-    __global__ void dilate(double *buffer, size_t bufferPitch, const int width, const int height,
-                           const int size, double *res, size_t resPitch, double minDoubleValue)
-    {
-        const int x = blockDim.x * blockIdx.x + threadIdx.x;
-        const int y = blockDim.y * blockIdx.y + threadIdx.y;
-
-        if (x >= width || y >= height)
-            return;
-
-        auto *res_line = (double *)((char *)res + y * resPitch);
-        auto max = minDoubleValue;
-        for (auto i = -size; i <= size; ++i)
-        {
-            if (y + i < 0 || y + i >= height)
-                continue;
-            const auto *buffer_line = (double *)((char *)buffer + (y + i) * bufferPitch);
-            for (auto j = -size; j <= size; ++j)
-            {
-                if (x + j < 0 || x + j >= width)
-                    continue;
-                if (buffer_line[x + j] > max)
-                    max = buffer_line[x + j];
-            }
-        }
-        res_line[x] = max;
     }
 
     template <unsigned int radio>
@@ -302,62 +239,32 @@ namespace gpu
             abortError("Fail buffer copy");
         free(buffer);
 
-        // Device Gaussian kernel
-        double *devGauss;
-        size_t GaussPitch;
-        if (cudaMallocPitch(&devGauss, &GaussPitch, KERNEL_LENGTH * sizeof(double), KERNEL_LENGTH)
-            != cudaSuccess)
-            abortError("Fail Gaussian kernel allocation");
-        if (cudaMemcpy2D(devGauss, GaussPitch, Gauss, KERNEL_LENGTH * sizeof(double),
-                         KERNEL_LENGTH * sizeof(double), KERNEL_LENGTH, cudaMemcpyHostToDevice)
-            != cudaSuccess)
-            abortError("Fail Gaussian kernel copy");
+        setGaussianKernel();
+        setDerivGaussianKernel();
 
-        // Device DerivGaussX kernel
-        double *devDerivGaussX;
-        size_t DerivGaussXPitch;
-        if (cudaMallocPitch(&devDerivGaussX, &DerivGaussXPitch, KERNEL_LENGTH * sizeof(double),
-                            KERNEL_LENGTH)
+        // Device Buffer
+        double *devTempBuffer;
+        size_t TempBufferPitch;
+        if (cudaMallocPitch(&devTempBuffer, &TempBufferPitch, width * sizeof(double), height)
             != cudaSuccess)
-            abortError("Fail DerivGaussX kernel allocation");
-        if (cudaMemcpy2D(devDerivGaussX, DerivGaussXPitch, DerivGaussX,
-                         KERNEL_LENGTH * sizeof(double), KERNEL_LENGTH * sizeof(double),
-                         KERNEL_LENGTH, cudaMemcpyHostToDevice)
-            != cudaSuccess)
-            abortError("Fail DerivGaussX kernel copy");
-
-        // Device DerivGaussY kernel
-        double *devDerivGaussY;
-        size_t DerivGaussYPitch;
-        if (cudaMallocPitch(&devDerivGaussY, &DerivGaussYPitch, KERNEL_LENGTH * sizeof(double),
-                            KERNEL_LENGTH)
-            != cudaSuccess)
-            abortError("Fail DerivGaussY kernel allocation");
-        if (cudaMemcpy2D(devDerivGaussY, DerivGaussYPitch, DerivGaussY,
-                         KERNEL_LENGTH * sizeof(double), KERNEL_LENGTH * sizeof(double),
-                         KERNEL_LENGTH, cudaMemcpyHostToDevice)
-            != cudaSuccess)
-            abortError("Fail DerivGaussY kernel copy");
+            abortError("Fail buffer allocation");
 
         // Device Ix
         double *devIx;
         size_t IxPitch;
         if (cudaMallocPitch(&devIx, &IxPitch, width * sizeof(double), height) != cudaSuccess)
             abortError("Fail Ix allocation");
-        convolve<<<dimGrid, dimBlock>>>(devBuffer, width, height, BufferPitch, devDerivGaussX,
-                                        DerivGaussXPitch, devIx, IxPitch);
-        cudaDeviceSynchronize();
-        cudaFree(devDerivGaussX);
+
+        convolutionRowsGPU(devTempBuffer, TempBufferPitch, devBuffer, BufferPitch, width, height, KernelType::GAUSSIAN);
+        convolutionColumnsGPU(devIx, IxPitch, devTempBuffer, TempBufferPitch, width, height, KernelType::GAUSSIAN_DERIV);
 
         // Device Iy
         double *devIy;
         size_t IyPitch;
         if (cudaMallocPitch(&devIy, &IyPitch, width * sizeof(double), height) != cudaSuccess)
             abortError("Fail Iy allocation");
-        convolve<<<dimGrid, dimBlock>>>(devBuffer, width, height, BufferPitch, devDerivGaussY,
-                                        DerivGaussYPitch, devIy, IyPitch);
-        cudaDeviceSynchronize();
-        cudaFree(devDerivGaussY);
+        convolutionRowsGPU(devTempBuffer, TempBufferPitch, devBuffer, BufferPitch, width, height, KernelType::GAUSSIAN_DERIV);
+        convolutionColumnsGPU(devIy, IyPitch, devTempBuffer, TempBufferPitch, width, height, KernelType::GAUSSIAN);
         cudaFree(devBuffer);
 
         // Device Ix2
@@ -394,31 +301,28 @@ namespace gpu
         size_t Wx2Pitch;
         if (cudaMallocPitch(&devWx2, &Wx2Pitch, width * sizeof(double), height) != cudaSuccess)
             abortError("Fail Wx2 allocation");
-        convolve<<<dimGrid, dimBlock>>>(devIx2, width, height, Ix2Pitch, devGauss, GaussPitch,
-                                        devWx2, Wx2Pitch);
-        cudaDeviceSynchronize();
+        convolutionRowsGPU(devTempBuffer, TempBufferPitch, devIx2, Ix2Pitch, width, height, KernelType::GAUSSIAN);
+        convolutionColumnsGPU(devWx2, Wx2Pitch, devTempBuffer, TempBufferPitch, width, height, KernelType::GAUSSIAN);
 
         // Device Wy2
         double *devWy2;
         size_t Wy2Pitch;
         if (cudaMallocPitch(&devWy2, &Wy2Pitch, width * sizeof(double), height) != cudaSuccess)
             abortError("Fail Wy2 allocation");
-        convolve<<<dimGrid, dimBlock>>>(devIy2, width, height, Iy2Pitch, devGauss, GaussPitch,
-                                        devWy2, Wy2Pitch);
-        cudaDeviceSynchronize();
+        convolutionRowsGPU(devTempBuffer, TempBufferPitch, devIy2, Iy2Pitch, width, height, KernelType::GAUSSIAN);
+        convolutionColumnsGPU(devWy2, Wy2Pitch, devTempBuffer, TempBufferPitch, width, height, KernelType::GAUSSIAN);
 
         // Device Wxy
         double *devWxy;
         size_t WxyPitch;
         if (cudaMallocPitch(&devWxy, &WxyPitch, width * sizeof(double), height) != cudaSuccess)
             abortError("Fail Wxy allocation");
-        convolve<<<dimGrid, dimBlock>>>(devIxy, width, height, IxyPitch, devGauss, GaussPitch,
-                                        devWxy, WxyPitch);
-        cudaDeviceSynchronize();
+        convolutionRowsGPU(devTempBuffer, TempBufferPitch, devIxy, IxyPitch, width, height, KernelType::GAUSSIAN);
+        convolutionColumnsGPU(devWxy, WxyPitch, devTempBuffer, TempBufferPitch, width, height, KernelType::GAUSSIAN);
         cudaFree(devIx2);
         cudaFree(devIy2);
         cudaFree(devIxy);
-        cudaFree(devGauss);
+        cudaFree(devTempBuffer);
 
         // Device Harris
         double *devHarris;

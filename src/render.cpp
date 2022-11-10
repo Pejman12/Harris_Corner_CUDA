@@ -1,6 +1,8 @@
 #include <ostream>
 #include <CLI/CLI.hpp>
 #include "render.hpp"
+#include "GPU/corners_gpu.cuh"
+#include "CPU/corners_cpu.hpp"
 #include "read_png.hpp"
 
 // write the point found by the corner detector in the outputfile
@@ -23,7 +25,7 @@ int main(int argc, char** argv)
     std::string output_file = "output.txt";
     std::string mode = "CPU";
 
-    CLI::App app{"mandel"};
+    CLI::App app{"Harris Corner Detector"};
     app.add_option("-i", input_file, "Input image");
     app.add_option("-o", output_file, "Output file with corner coordinates");
     app.add_set("-m", mode, {"GPU", "CPU"}, "Either 'GPU' or 'CPU'");

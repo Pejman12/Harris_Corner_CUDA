@@ -1,11 +1,12 @@
 #include <benchmark/benchmark.h>
 #include "read_png.hpp"
-#include "render.hpp"
+#include "GPU/corners_gpu.cuh"
+#include "CPU/corners_cpu.hpp"
 
 constexpr int niteration = 30;
 int width;
 int height;
-const auto image = read_png("imgs/windows-logo-digital-art-8k-pv.png", &width, &height);
+const auto image = read_png("imgs/hamburg_fHD.png", &width, &height);
 
 void BM_Rendering_cpu(benchmark::State& st)
 {

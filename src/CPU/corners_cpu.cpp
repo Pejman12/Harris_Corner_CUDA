@@ -36,10 +36,10 @@ namespace cpu {
         for (auto i = 0; i < height; ++i)
             for (auto j = 0; j < width; ++j) {
                 double sum = 0;
-                for (auto k = -KERNEL_SIZE; k <= KERNEL_SIZE; ++k)
-                    for (auto l = -KERNEL_SIZE; l <= KERNEL_SIZE; ++l) {
+                for (auto k = -KERNEL_RADIUS; k <= KERNEL_RADIUS; ++k)
+                    for (auto l = -KERNEL_RADIUS; l <= KERNEL_RADIUS; ++l) {
                         if (i + k >= 0 && i + k < height && j + l >= 0 && j + l < width)
-                            sum += buffer[i + k][j + l] * kernel[k + KERNEL_SIZE][l + KERNEL_SIZE];
+                            sum += buffer[i + k][j + l] * kernel[k + KERNEL_RADIUS][l + KERNEL_RADIUS];
                     }
                 result[i][j] = sum;
             }

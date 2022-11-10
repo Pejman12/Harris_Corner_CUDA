@@ -36,14 +36,7 @@ namespace gpu {
     };
 
 
-/// \param buffer The RGBA24 image buffer
-/// \param width Image width
-/// \param height Image height
-/// \param stride Number of bytes between two lines
-/// \returns a vector of corners coordinates
     extern "C" point *find_corners_gpu(unsigned char **buffer_, const int width, const int height, int *nb_kpts);
-
-
 
 }
 

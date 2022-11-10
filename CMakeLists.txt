@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.22)
-project (HARRIS LANGUAGES CUDA CXX)
+project (HARRIS CUDA CXX)
 
 include(FetchContent)
 
@@ -33,10 +33,9 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR} )
 find_package(PNG REQUIRED)
 
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -Wextra -pedantic -std=c++17 -O3 -fopenmp")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -Wextra -pedantic -std=c++17 -O3 -DNDEBUG -fopenmp")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS}")
-set(CMAKE_CUDA_ARCHITECTURES 60 61 62 70 72 75 86)
-set(CMAKE_CUDA_COMPILER /usr/local/cuda-11.8/bin/nvcc)
+set(CMAKE_CUDA_ARCHITECTURES 75 86)
 
 
 add_library(renderer_cpu)
@@ -46,11 +45,10 @@ target_sources(renderer_cpu PRIVATE src/CPU/corners_cpu.cpp)
 target_include_directories(renderer_cpu PRIVATE src src/CPU)
 
 
-
 add_library(renderer_gpu)
 target_compile_features(renderer_gpu PUBLIC)
 target_link_libraries(renderer_gpu PRIVATE spdlog::spdlog)
-target_sources(renderer_gpu PRIVATE src/GPU/corners_gpu.cu)
+target_sources(renderer_gpu PRIVATE src/GPU/corners_gpu.cu src/GPU/separable_convolution.cu src/GPU/error.cu)
 target_include_directories(renderer_gpu PRIVATE src src/GPU)
 set_target_properties(renderer_gpu PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 

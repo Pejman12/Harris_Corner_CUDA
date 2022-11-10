@@ -30,11 +30,11 @@ def gauss_derivatives(im: np.array, size: int, sizey: int=None):
     return imx,imy
 
 def compute_harris_response(image):  #, k=0.05):
-    DERIVATIVE_KERNEL_SIZE = 3
+    DERIVATIVE_KERNEL_RADIUS = 3
     OPENING_SIZE = 3
     
     #derivatives
-    imx,imy = gauss_derivatives(image, DERIVATIVE_KERNEL_SIZE)
+    imx,imy = gauss_derivatives(image, DERIVATIVE_KERNEL_RADIUS)
 
     #kernel for weighted sum
     gauss = gauss_kernel(OPENING_SIZE) # opening param

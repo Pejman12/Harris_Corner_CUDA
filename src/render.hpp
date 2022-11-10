@@ -5,7 +5,7 @@
 
 #define EPS 1
 #define MAX_KPTS 2000
-#define KERNEL_SIZE 3
+#define KERNEL_RADIUS 3
 #define KERNEL_LENGTH 7
 #define THRESHOLD 0.2
 #define DISTANCE 15
@@ -16,6 +16,6 @@ struct point {
     double score;
 };
 
-#include "CPU/corners_cpu.hpp"
-#include "GPU/corners_gpu.cuh"
+//#include "CPU/corners_cpu.hpp"
+//#include "GPU/corners_gpu.cuh"
 
