@@ -5,7 +5,7 @@ include(FetchContent)
 
 FetchContent_Declare(
   GoogleBenchmark
-  URL https://github.com/google/benchmark/archive/v1.5.2.tar.gz
+  URL https://github.com/google/benchmark/archive/v1.8.0.tar.gz
   )
 
 FetchContent_Declare(
