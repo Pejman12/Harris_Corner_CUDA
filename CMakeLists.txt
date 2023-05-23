@@ -10,12 +10,12 @@ FetchContent_Declare(
 
 FetchContent_Declare(
   CLI11
-  URL https://github.com/CLIUtils/CLI11/archive/v1.9.1.tar.gz
+  URL https://github.com/CLIUtils/CLI11/archive/v2.3.2.tar.gz
   )
 
 FetchContent_Declare(
   spdlog
-  URL https://github.com/gabime/spdlog/archive/v1.9.2.tar.gz
+  URL https://github.com/gabime/spdlog/archive/v1.11.0.tar.gz
   )
 
 
